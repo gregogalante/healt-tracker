@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health Tracker</title>
+
+    <link rel="manifest" href="./pwa/manifest.json">
+    <meta name="application-name" content="Healt Tracker">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="full-screen" content="yes">
+    <meta name="browsermode" content="application">
+    <meta name="screen-orientation" content="portrait">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Healt Tracker">
+    <link rel="icon" type="image/png" sizes="16x16" href="./pwa/favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="./pwa/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="96x96" href="./pwa/favicon-96x96.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="./pwa/favicon-192x192.png">
+    <link rel="icon" href="./pwa/favicon.ico">
+    <link rel="apple-touch-icon" sizes="57x57" href="./pwa/apple-icon-57x57.png">
+    <link rel="apple-touch-icon" sizes="60x60" href="./pwa/apple-icon-60x60.png">
+    <link rel="apple-touch-icon" sizes="72x72" href="./pwa/apple-icon-72x72.png">
+    <link rel="apple-touch-icon" sizes="76x76" href="./pwa/apple-icon-76x76.png">
+    <link rel="apple-touch-icon" sizes="114x114" href="./pwa/apple-icon-114x114.png">
+    <link rel="apple-touch-icon" sizes="120x120" href="./pwa/apple-icon-120x120.png">
+    <link rel="apple-touch-icon" sizes="144x144" href="./pwa/apple-icon-144x144.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="./pwa/apple-icon-152x152.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="./pwa/apple-icon-180x180.png">
+    <link rel="icon" sizes="36x36" href="./pwa/android-icon-36x36.png">
+    <link rel="icon" sizes="48x48" href="./pwa/android-icon-48x48.png">
+    <link rel="icon" sizes="72x72" href="./pwa/android-icon-72x72.png">
+    <link rel="icon" sizes="96x96" href="./pwa/android-icon-96x96.png">
+    <link rel="icon" sizes="144x144" href="./pwa/android-icon-144x144.png">
+    <link rel="icon" sizes="192x192" href="./pwa/android-icon-192x192.png">
+    <link rel="icon" sizes="512x512" href="./pwa/android-icon-512x512.png">
+
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="vendors/tesseract/tesseract.min.js"></script>
+    <script src="vendors/pdf/pdf.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Configurazione Tesseract e PDF.js
+        const tesseractWorkerPath = 'vendors/tesseract/worker.min.js';
+        const tesseractLangPath = 'vendors/tesseract';
+        const tesseractCorePath = 'vendors/tesseract/tesseract-core.wasm.js';
+        const pdfWorkerPath = 'vendors/pdf/pdf.worker.min.js';
+
+        function ButtonIcon({ icon, onClick, className, theme = 'white', disabled = false, loading = false }) {
+            const buttonClass = `flex items-center justify-center rounded-full shadow-md transition w-10 h-10
+                ${theme === 'primary' ? 'bg-blue-600 text-white hover:bg-blue-700' : ''}
+                ${theme === 'danger' ? 'bg-red-600 text-white hover:bg-red-700' : ''}
+                ${theme === 'white' ? 'bg-white text-blue-600 hover:bg-gray-100' : ''}
+                ${className || ''}`;
+            
+            return (
+                <button onClick={onClick} className={buttonClass} disabled={disabled}>
+                    {loading ? 
+                        <i className="fas fa-spinner fa-spin text-lg"></i> : 
+                        <i className={`fas fa-${icon} text-lg`}></i>}
+                </button>
+            );
+        }
+
+        function Button({ label, onClick, className, theme = 'primary', disabled = false, loading = false }) {
+            const buttonClass = `px-4 py-2 rounded-full shadow-md transition
+                ${theme === 'primary' ? 'bg-blue-600 text-white hover:bg-blue-700' : ''}
+                ${theme === 'danger' ? 'bg-red-600 text-white hover:bg-red-700' : ''}
+                ${theme === 'white' ? 'bg-white text-blue-600 hover:bg-gray-100' : ''}
+                ${loading ? 'animate-pulse cursor-wait' : ''}
+                ${disabled && !loading ? 'opacity-50 cursor-not-allowed' : ''}
+                ${className || ''}`;
+            
+            return (
+                <button onClick={onClick} className={buttonClass} disabled={disabled}>
+                    {loading ? 
+                        <i className="fas fa-spinner fa-spin text-lg"></i> : 
+                        label}
+                </button>
+            );
+        }
+
+        // Componente form riutilizzabile per inserimento/modifica referti
+        function ReportForm({ 
+            initialData = {}, 
+            onSave, 
+            onCancel, 
+            title = "Dati Referto",
+            saving = false,
+            cancelLabel = "Annulla",
+            saveLabel = "Salva Referto"
+        }) {
+            const [formData, setFormData] = useState({
+                titolo: '',
+                data_esame: new Date().toISOString().split('T')[0],
+                nome_medico: '',
+                descrizione: '',
+                tags: [],
+                esiti: [],
+                ...initialData
+            });
+
+            // Aggiorna formData quando cambiano i dati iniziali
+            useEffect(() => {
+                const processedData = { ...initialData };
+
+                // Assicura che tutti gli esiti abbiano tutti i campi necessari
+                if (processedData.esiti) {
+                    processedData.esiti = processedData.esiti.map(esito => ({
+                        nome: esito.nome || '',
+                        valore_numerico: esito.valore_numerico || null,
+                        valore_booleano: esito.valore_booleano !== undefined ? esito.valore_booleano : true,
+                        valore_stringa: esito.valore_stringa || ''
+                    }));
+                }
+                
+                setFormData(prev => ({
+                    ...prev,
+                    ...processedData
+                }));
+            }, [initialData]);
+
+            const updateFormData = (field, value) => {
+                setFormData(prev => ({
+                    ...prev,
+                    [field]: value
+                }));
+            };
+
+            const addEsito = () => {
+                setFormData(prev => ({
+                    ...prev,
+                    esiti: [...prev.esiti, { nome: '', valore_numerico: null, valore_booleano: true, valore_stringa: '' }]
+                }));
+            };
+
+            const updateEsito = (index, field, value) => {
+                setFormData(prev => ({
+                    ...prev,
+                    esiti: prev.esiti.map((esito, i) => 
+                        i === index ? { ...esito, [field]: value } : esito
+                    )
+                }));
+            };
+
+            const removeEsito = (index) => {
+                setFormData(prev => ({
+                    ...prev,
+                    esiti: prev.esiti.filter((_, i) => i !== index)
+                }));
+            };
+
+            const handleSave = () => {
+                if (!formData.titolo || !formData.data_esame) {
+                    alert('Inserisci almeno il titolo e la data dell\'esame');
+                    return;
+                }
+                onSave(formData);
+            };
+
+            const isFormValid = formData.titolo && formData.data_esame;
+
+            return (
+                <div className="space-y-4">
+                    <h3 className="text-lg font-semibold">{title}</h3>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Titolo *
+                        </label>
+                        <input
+                            type="text"
+                            value={formData.titolo}
+                            onChange={(e) => updateFormData('titolo', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded"
+                            placeholder="Es. Esami del sangue"
+                            required
+                        />
+                    </div>
+                    
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Data Esame *
+                        </label>
+                        <input
+                            type="date"
+                            value={formData.data_esame}
+                            onChange={(e) => updateFormData('data_esame', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded"
+                            required
+                        />
+                    </div>
+                    
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nome Medico</label>
+                        <input
+                            type="text"
+                            value={formData.nome_medico}
+                            onChange={(e) => updateFormData('nome_medico', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded"
+                            placeholder="Es. Dott. Mario Rossi"
+                        />
+                    </div>
+                    
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label>
+                        <textarea
+                            value={formData.descrizione}
+                            onChange={(e) => updateFormData('descrizione', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded"
+                            rows="3"
+                            placeholder="Descrizione del referto o note aggiuntive"
+                        />
+                    </div>
+                    
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Tags (separati da virgola)
+                        </label>
+                        <input
+                            type="text"
+                            value={formData.tags.join(', ')}
+                            onChange={(e) => updateFormData('tags', e.target.value.split(',').map(t => t.trim()).filter(t => t))}
+                            className="w-full p-2 border border-gray-300 rounded"
+                            placeholder="Es. sangue, colesterolo, glicemia"
+                        />
+                    </div>
+                    
+                    <div>
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="block text-sm font-medium text-gray-700">Esiti</label>
+                            <ButtonIcon
+                                icon="add"
+                                onClick={addEsito}
+                                theme="primary"
+                            />
+                        </div>
+                        
+                        {formData.esiti.map((esito, index) => (
+                            <div key={index} className="border p-3 rounded mb-2">
+                                <div className="flex justify-between items-center mb-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Nome esito (es. Colesterolo totale)"
+                                        value={esito.nome}
+                                        onChange={(e) => updateEsito(index, 'nome', e.target.value)}
+                                        className="flex-1 p-2 border border-gray-300 rounded mr-2"
+                                    />
+                                    <ButtonIcon
+                                        icon="trash"
+                                        onClick={() => removeEsito(index)}
+                                        className="ml-2"
+                                        theme="danger"
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="Valore numerico (opzionale)"
+                                        value={esito.valore_numerico || ''}
+                                        onChange={(e) => updateEsito(index, 'valore_numerico', e.target.value ? parseFloat(e.target.value) : null)}
+                                        className="p-2 border border-gray-300 rounded mb-2 w-full"
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Valore testuale (opzionale)"
+                                        value={esito.valore_stringa || ''}
+                                        onChange={(e) => updateEsito(index, 'valore_stringa', e.target.value)}
+                                        className="p-2 border border-gray-300 rounded mb-2 w-full"
+                                    />
+                                    <select
+                                        value={esito.valore_booleano}
+                                        onChange={(e) => updateEsito(index, 'valore_booleano', e.target.value === 'true')}
+                                        className="p-2 border border-gray-300 rounded w-full"
+                                    >
+                                        <option value="true">OK / Normale</option>
+                                        <option value="false">Anomalo / Fuori norma</option>
+                                    </select>
+                                </div>
+                            </div>
+                        ))}
+                        
+                        {formData.esiti.length === 0 && (
+                            <p className="text-gray-500 text-sm italic">
+                                Nessun esito aggiunto.
+                            </p>
+                        )}
+                    </div>
+                    
+                    <div className="flex gap-2 justify-end items-center pt-4 border-t">
+                        <Button
+                            onClick={onCancel}
+                            label={cancelLabel}
+                            theme="danger"
+                        />
+
+                        <Button
+                            onClick={handleSave}
+                            disabled={!isFormValid}
+                            loading={saving}
+                            label={saveLabel}
+                            theme="primary"
+                        />
+                    </div>
+                </div>
+            );
+        }
+        
+        // Componente di login
+        function LoginForm({ onLogin }) {
+            const [code, setCode] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+
+                try {
+                    const formData = new FormData();
+                    formData.append('code', code);
+                    
+                    const response = await fetch('api.php?action=login', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        onLogin();
+                    } else {
+                        setError(result.message || 'Codice non valido');
+                    }
+                } catch (err) {
+                    setError('Errore di connessione');
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center">
+                    <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+                        <h1 className="text-2xl font-bold text-center mb-6 text-gray-800">
+                            Health Tracker
+                        </h1>
+                        
+                        <form onSubmit={handleSubmit}>
+                            <div className="mb-4">
+                                <label className="block text-gray-700 text-sm font-bold mb-2">
+                                    Codice di accesso (6 cifre)
+                                </label>
+                                <input
+                                    type="text"
+                                    maxLength="6"
+                                    value={code}
+                                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="123456"
+                                    required
+                                />
+                            </div>
+                            
+                            {error && (
+                                <div className="mb-4 text-red-600 text-sm">
+                                    {error}
+                                </div>
+                            )}
+                            
+                            <button
+                                type="submit"
+                                disabled={loading || code.length !== 6}
+                                className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {loading ? 'Accesso...' : 'Accedi'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // Componente per l'inserimento manuale di un referto
+        function ManualReport({ onReportSaved }) {
+            const [saving, setSaving] = useState(false);
+            const [resetKey, setResetKey] = useState(0); // Per forzare il reset del form
+
+            const generateClientUUID = () => {
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                    const r = Math.random() * 16 | 0;
+                    const v = c == 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            };
+
+            const handleSaveReport = async (formData) => {
+                setSaving(true);
+                
+                try {
+                    const uuid = generateClientUUID();
+                    
+                    // Aggiungi il flag manual_entry per distinguere i referti manuali
+                    const reportDataWithFlag = {
+                        ...formData,
+                        manual_entry: true
+                    };
+                    
+                    const formDataObj = new FormData();
+                    formDataObj.append('uuid', uuid);
+                    formDataObj.append('report_data', JSON.stringify(reportDataWithFlag));
+                    
+                    const response = await fetch('api.php?action=save_report', {
+                        method: 'POST',
+                        body: formDataObj
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        onReportSaved();
+                        setResetKey(prev => prev + 1);
+                    } else {
+                        alert('Errore nel salvataggio: ' + (result.error || 'Errore sconosciuto'));
+                    }
+                } catch (error) {
+                    console.error('Errore nel salvataggio:', error);
+                    alert('Errore nel salvataggio del referto');
+                } finally {
+                    setSaving(false);
+                }
+            };
+
+            const handleReset = () => {
+                setResetKey(prev => prev + 1);
+            };
+
+            // Dati iniziali per il form manuale
+            const initialFormData = {
+                titolo: '',
+                data_esame: new Date().toISOString().split('T')[0],
+                nome_medico: '',
+                descrizione: '',
+                tags: [],
+                esiti: []
+            };
+
+            return (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h2 className="text-xl font-bold mb-4">Inserimento Manuale Referto</h2>
+                    
+                    <ReportForm
+                        key={resetKey} // Forza il reset quando cambia la key
+                        initialData={initialFormData}
+                        onSave={handleSaveReport}
+                        onCancel={handleReset}
+                        title="Compila i dati del referto"
+                        saving={saving}
+                        cancelLabel="Reset"
+                        saveLabel="Salva Referto"
+                    />
+                </div>
+            );
+        }
+
+        // Componente per il caricamento di un nuovo referto
+        function UploadReport({ onUploadComplete }) {
+            const [file, setFile] = useState(null);
+            const [extracting, setExtracting] = useState(false);
+            const [progress, setProgress] = useState(0);
+            const [extractedText, setExtractedText] = useState('');
+            const [analyzing, setAnalyzing] = useState(false);
+            const [analysisResult, setAnalysisResult] = useState(null);
+            const [currentUuid, setCurrentUuid] = useState(null);
+            const [editedData, setEditedData] = useState(null);
+            const [saving, setSaving] = useState(false);
+            const fileInputRef = useRef();
+
+            const initTesseractWorker = async () => {
+                const worker = Tesseract.createWorker({
+                    workerPath: tesseractWorkerPath,
+                    langPath: tesseractLangPath,
+                    corePath: tesseractCorePath,
+                    gzip: false
+                });
+                
+                await worker.load();
+                await worker.loadLanguage('ita');
+                await worker.initialize('ita');
+                return worker;
+            };
+
+            const readFileAsDataURL = (file) => {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(reader);
+                    reader.readAsDataURL(file);
+                });
+            };
+
+            const loadImage = (url) => {
+                return new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.addEventListener('load', () => resolve(img));
+                    img.addEventListener('error', (err) => reject(err));
+                    img.src = url;
+                });
+            };
+
+            const extractTextFromPDF = async (file) => {
+                setExtracting(true);
+                setProgress(0);
+                
+                try {
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerPath;
+                    
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    const numPages = pdf.numPages;
+                    let fullText = '';
+                    
+                    const canvas = document.createElement('canvas');
+                    const pixelRatio = window.devicePixelRatio * 2;
+                    
+                    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+                        setProgress(Math.round((pageNum - 1) / numPages * 100));
+                        
+                        const worker = await initTesseractWorker();
+                        const page = await pdf.getPage(pageNum);
+                        
+                        const viewport = page.getViewport({ scale: 1 });
+                        canvas.width = viewport.width * pixelRatio;
+                        canvas.height = viewport.height * pixelRatio;
+                        canvas.style.width = `${viewport.width}px`;
+                        canvas.style.height = `${viewport.height}px`;
+                        
+                        const context = canvas.getContext('2d');
+                        context.scale(pixelRatio, pixelRatio);
+                        
+                        await page.render({
+                            canvasContext: context,
+                            viewport: viewport
+                        }).promise;
+
+                        const imageData = canvas.toDataURL();
+                        const img = await loadImage(imageData);
+                        
+                        const result = await worker.recognize(img);
+                        
+                        fullText += result.data.text + '\n';
+                        await worker.terminate();
+                    }
+                    
+                    setProgress(100);
+                    setExtractedText(fullText);
+                    return fullText;
+                } catch (error) {
+                    console.error('Errore nell\'estrazione del testo:', error);
+                    alert('Errore nell\'estrazione del testo dal PDF');
+                } finally {
+                    setExtracting(false);
+                }
+            };
+
+            const uploadFiles = async (pdfFile, textContent) => {
+                const formData = new FormData();
+                formData.append('pdf', pdfFile);
+                formData.append('extracted_text', textContent);
+                
+                const response = await fetch('api.php?action=upload_files', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error('Errore nel caricamento dei file');
+                }
+                
+                return result.uuid;
+            };
+
+            const analyzeReport = async (uuid) => {
+                setAnalyzing(true);
+                
+                try {
+                    const formData = new FormData();
+                    formData.append('uuid', uuid);
+                    
+                    const response = await fetch('api.php?action=analyze_report', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        setAnalysisResult({ ...result.data, uuid: result.uuid });
+                        setEditedData({ ...result.data });
+                    } else {
+                        alert('Errore nell\'analisi del referto: ' + (result.error || 'Errore sconosciuto'));
+                    }
+                } catch (error) {
+                    console.error('Errore nell\'analisi:', error);
+                    alert('Errore nell\'analisi del referto');
+                } finally {
+                    setAnalyzing(false);
+                }
+            };
+
+            const handleFileSelect = async (e) => {
+                const selectedFile = e.target.files[0];
+                if (!selectedFile || selectedFile.type !== 'application/pdf') {
+                    alert('Seleziona un file PDF valido');
+                    return;
+                }
+                
+                setFile(selectedFile);
+                const text = await extractTextFromPDF(selectedFile);
+                
+                if (text) {
+                    const uuid = await uploadFiles(selectedFile, text);
+                    setCurrentUuid(uuid);
+                    await analyzeReport(uuid);
+                }
+            };
+
+            const handleSaveReport = async (formData) => {
+                setSaving(true);
+                
+                try {
+                    // Aggiungi il campo manual_entry: false per i referti caricati da PDF
+                    const reportDataWithFlag = {
+                        ...formData,
+                        manual_entry: false
+                    };
+                    
+                    const formDataObj = new FormData();
+                    formDataObj.append('uuid', currentUuid || 'temp');
+                    formDataObj.append('report_data', JSON.stringify(reportDataWithFlag));
+                    
+                    const response = await fetch('api.php?action=save_report', {
+                        method: 'POST',
+                        body: formDataObj
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        onUploadComplete();
+                        handleCancel();
+                    } else {
+                        alert('Errore nel salvataggio: ' + (result.error || 'Errore sconosciuto'));
+                    }
+                } catch (error) {
+                    console.error('Errore nel salvataggio:', error);
+                    alert('Errore nel salvataggio del referto');
+                } finally {
+                    setSaving(false);
+                }
+            };
+
+            const handleCancel = () => {
+                setFile(null);
+                setExtractedText('');
+                setAnalysisResult(null);
+                setEditedData(null);
+                setCurrentUuid(null);
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+            };
+
+            return (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h2 className="text-xl font-bold mb-4">Carica Nuovo Referto</h2>
+                    
+                    {!file && (
+                        <div>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="application/pdf"
+                                onChange={handleFileSelect}
+                                className="mb-4 w-full p-2 border border-gray-300 rounded"
+                            />
+                        </div>
+                    )}
+                    
+                    {extracting && (
+                        <div className="mb-4">
+                            <div className="flex items-center text-sm text-gray-600 mb-2">
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                                Estrazione testo in corso... {progress}%
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div 
+                                    className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out" 
+                                    style={{ width: `${progress}%` }}
+                                ></div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {analyzing && (
+                        <div className="text-center py-4">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+                            <div className="text-sm text-gray-600">Analisi del referto in corso...</div>
+                        </div>
+                    )}
+                    
+                    {editedData && (
+                        <ReportForm
+                            initialData={editedData}
+                            onSave={handleSaveReport}
+                            onCancel={handleCancel}
+                            title="Dati Estratti - Verifica e Modifica"
+                            saving={saving}
+                            cancelLabel="Annulla"
+                            saveLabel="Salva Referto"
+                        />
+                    )}
+                </div>
+            );
+        }
+
+        // Componente per la lista dei referti
+        function ReportsList({ reports, onReportsUpdate }) {
+            const [selectedYear, setSelectedYear] = useState(''); // new Date().getFullYear().toString()
+            const [searchTerm, setSearchTerm] = useState('');
+            const [filteredReports, setFilteredReports] = useState([]);
+            const [loading, setLoading] = useState(false);
+
+            const years = [];
+            for (let year = 2020; year <= new Date().getFullYear() + 1; year++) {
+                years.push(year.toString());
+            }
+
+            const loadReports = async () => {
+                setLoading(true);
+                try {
+                    const params = new URLSearchParams();
+                    if (selectedYear) params.append('year', selectedYear);
+                    if (searchTerm) params.append('search', searchTerm);
+
+                    const response = await fetch(`api.php?action=get_reports&${params.toString()}`);
+                    const reports = await response.json();
+                    
+                    if (Array.isArray(reports)) {
+                        setFilteredReports(reports);
+                    }
+                } catch (error) {
+                    console.error('Errore nel caricamento dei referti:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                loadReports();
+            }, [selectedYear, searchTerm]);
+
+            useEffect(() => {
+                if (onReportsUpdate) {
+                    loadReports();
+                }
+            }, [onReportsUpdate]);
+
+            const formatDate = (dateStr) => {
+                if (!dateStr) return 'N/A';
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('it-IT');
+            };
+
+            const handleDeleteReport = async (uuid, titolo) => {
+                const confirmDelete = window.confirm(
+                    `Sei sicuro di voler eliminare il referto "${titolo || 'Senza titolo'}"?`
+                );
+
+                if (!confirmDelete) {
+                    return;
+                }
+
+                try {
+                    const formData = new FormData();
+                    formData.append('uuid', uuid);
+
+                    const response = await fetch('api.php?action=delete_report', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        loadReports();
+                    } else {
+                        alert('Errore nell\'eliminazione del referto: ' + (result.error || 'Errore sconosciuto'));
+                    }
+                } catch (error) {
+                    console.error('Errore nell\'eliminazione:', error);
+                    alert('Errore nella comunicazione con il server');
+                }
+            };
+
+            const openPdfInTab = (uuid) => {
+                const pdfUrl = `api.php?action=download_pdf&uuid=${uuid}`;
+                window.open(pdfUrl, '_blank');
+            };
+
+            return (
+                <>
+                    <div className="flex gap-4 mb-4 items-center">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Anno</label>
+                            <select
+                                value={selectedYear}
+                                onChange={(e) => setSelectedYear(e.target.value)}
+                                className="p-2 border border-gray-300 rounded appearance-none w-full"
+                            >
+                                <option value="">Tutti gli anni</option>
+                                {years.map(year => (
+                                    <option key={year} value={year}>{year}</option>
+                                ))}
+                            </select>
+                        </div>
+                        
+                        <div className="flex-1">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Cerca</label>
+                            <input
+                                type="text"
+                                placeholder="Cerca nei referti..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full p-2 border border-gray-300 rounded"
+                            />
+                        </div>
+                    </div>
+                    <div className="bg-white p-6 rounded-lg shadow-md">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold">I tuoi Referti</h2>
+                            <div className="text-sm text-gray-600">
+                                {filteredReports.length} refert{filteredReports.length !== 1 ? 'i' : 'o'}
+                            </div>
+                        </div>
+                        
+                        {loading ? (
+                            <div className="text-center py-8">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                                <div className="text-sm text-gray-600">Caricamento referti...</div>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {filteredReports.length === 0 ? (
+                                    <div className="text-center py-8 text-gray-500">
+                                        Nessun referto trovato
+                                    </div>
+                                ) : (
+                                    filteredReports.map((report) => (
+                                        <div key={report.uuid} className="border p-4 rounded-lg hover:bg-gray-50">
+                                            <div className="space-y-2 mb-2">
+                                                <div className="flex justify-between items-center">
+                                                    <h3 className="flex-1 font-semibold text-lg">{report.titolo || 'Referto senza titolo'}</h3>
+                                                    <div className="flex gap-2">
+                                                        {!report.manual_entry && (
+                                                            <ButtonIcon
+                                                                icon="file-pdf"
+                                                                theme="primary"
+                                                                onClick={() => openPdfInTab(report.uuid)}
+                                                            />
+                                                        )}
+                                                        <ButtonIcon
+                                                            icon="trash"
+                                                            theme="danger"
+                                                            onClick={() => handleDeleteReport(report.uuid, report.titolo)}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-sm text-gray-500">
+                                                        {formatDate(report.data_esame)}
+                                                    </span>
+                                                    {report.manual_entry ? (
+                                                        <span className="inline-block bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
+                                                            Manuale
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
+                                                            Da PDF
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            
+                                            {report.nome_medico && (
+                                                <div className="text-sm text-gray-600 mb-2">
+                                                    <strong>Medico:</strong> {report.nome_medico}
+                                                </div>
+                                            )}
+                                            
+                                            {report.descrizione && (
+                                                <div className="text-sm text-gray-700 mb-3">
+                                                    {report.descrizione}
+                                                </div>
+                                            )}
+                                            
+                                            {report.tags && report.tags.length > 0 && (
+                                                <div className="mb-3">
+                                                    {report.tags.map((tag, index) => (
+                                                        <span 
+                                                            key={index}
+                                                            className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded mr-2 mb-1"
+                                                        >
+                                                            {tag}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            
+                                            {report.esiti && report.esiti.length > 0 && (
+                                                <div>
+                                                    <h4 className="font-medium text-sm mb-2">Esiti:</h4>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        {report.esiti.map((esito, index) => (
+                                                            <div 
+                                                                key={index}
+                                                                className="p-2 rounded text-sm bg-gray-50 border"
+                                                            >
+                                                                <div className="flex justify-between items-start">
+                                                                    <div className="flex-1">
+                                                                        <div className="font-medium">{esito.nome}</div>
+                                                                        {esito.valore_numerico && (
+                                                                            <div className="text-xs text-gray-600">{esito.valore_numerico}</div>
+                                                                        )}
+                                                                        {esito.valore_stringa && (
+                                                                            <div className="text-xs text-gray-600">{esito.valore_stringa}</div>
+                                                                        )}
+                                                                    </div>
+                                                                    <span className={`inline-block px-2 py-1 rounded text-xs font-medium ml-2 ${
+                                                                        esito.valore_booleano 
+                                                                            ? 'bg-green-100 text-green-800' 
+                                                                            : 'bg-red-100 text-red-800'
+                                                                    }`}>
+                                                                        {esito.valore_booleano ? 'OK' : 'ANOMALO'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </>
+            );
+        }
+
+        // Componente principale
+        function App() {
+            const [authenticated, setAuthenticated] = useState(false);
+            const [loading, setLoading] = useState(true);
+            const [activeTab, setActiveTab] = useState('reports');
+            const [reportsUpdateTrigger, setReportsUpdateTrigger] = useState(0);
+
+            useEffect(() => {
+                checkAuthentication();
+            }, []);
+
+            const checkAuthentication = async () => {
+                try {
+                    const response = await fetch('api.php?action=check_auth');
+                    const result = await response.json();
+                    setAuthenticated(result.authenticated);
+                } catch (error) {
+                    console.error('Errore nel controllo autenticazione:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleLogin = () => {
+                setAuthenticated(true);
+            };
+
+            const handleUploadComplete = () => {
+                setActiveTab('reports');
+                setReportsUpdateTrigger(prev => prev + 1);
+            };
+
+            const handleManualReportSaved = () => {
+                setActiveTab('reports');
+                setReportsUpdateTrigger(prev => prev + 1);
+            };
+
+            if (loading) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    </div>
+                );
+            }
+
+            if (!authenticated) {
+                return <LoginForm onLogin={handleLogin} />;
+            }
+
+            return (
+                <div className="min-h-screen bg-gray-100">
+                    <header className="bg-blue-600 text-white shadow-sm border-b">
+                        <div className="mx-auto px-4">
+                            <div className="flex justify-between items-center h-20">
+                                <h1 className="text-xl lg:text-2xl font-bold">Health Tracker</h1>
+
+                                <nav className="flex space-x-4">
+                                    <ButtonIcon
+                                        onClick={() => setActiveTab('reports')}
+                                        icon="list"
+                                    />
+                                    <ButtonIcon
+                                        onClick={() => setActiveTab('upload')}
+                                        icon="upload"
+                                    />
+                                    <ButtonIcon
+                                        onClick={() => setActiveTab('manual')}
+                                        icon="add"
+                                    />
+                                </nav>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+                        {activeTab === 'reports' && (
+                            <ReportsList onReportsUpdate={reportsUpdateTrigger} />
+                        )}
+                        {activeTab === 'upload' && (
+                            <UploadReport onUploadComplete={handleUploadComplete} />
+                        )}
+                        {activeTab === 'manual' && (
+                            <ManualReport onReportSaved={handleManualReportSaved} />
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
