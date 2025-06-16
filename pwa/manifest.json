@@ -1,6 +1,7 @@
 {
   "name": "Healt Tracker",
   "short_name": "Healt Tracker",
+  "scope": "/ht",
   "start_url": "/ht",
   "display": "standalone",
   "orientation": "portrait",

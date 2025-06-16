@@ -252,6 +252,82 @@ Rispondi SOLO con il JSON, senza altri testi:";
     return null;
 }
 
+function getReport($config, $uuid) {
+    $dataPath = $config['data_path'];
+    
+    // Cerca il file in tutte le cartelle anno
+    $years = glob($dataPath . '/[0-9][0-9][0-9][0-9]', GLOB_ONLYDIR);
+    foreach ($years as $yearDir) {
+        $filePath = $yearDir . '/' . $uuid . '.json';
+        if (file_exists($filePath)) {
+            $data = json_decode(file_get_contents($filePath), true);
+            if ($data) {
+                $data['uuid'] = $uuid;
+                return $data;
+            }
+        }
+    }
+    
+    return null;
+}
+
+function updateReport($config, $reportData, $uuid) {
+    $dataPath = $config['data_path'];
+    
+    // Prima trova il file esistente
+    $existingFilePath = null;
+    $existingData = null;
+    $years = glob($dataPath . '/[0-9][0-9][0-9][0-9]', GLOB_ONLYDIR);
+    foreach ($years as $yearDir) {
+        $filePath = $yearDir . '/' . $uuid . '.json';
+        if (file_exists($filePath)) {
+            $existingFilePath = $filePath;
+            $existingData = json_decode(file_get_contents($filePath), true);
+            break;
+        }
+    }
+    
+    if (!$existingFilePath) {
+        return false;
+    }
+    
+    // Verifica se la data dell'esame è cambiata (e quindi serve spostare il file)
+    $oldYear = date('Y', strtotime($existingData['data_esame']));
+    $newYear = date('Y', strtotime($reportData['data_esame']));
+    
+    if ($oldYear !== $newYear) {
+        // Sposta il file nella cartella dell'anno corretto
+        $newYearPath = $dataPath . '/' . $newYear;
+        if (!is_dir($newYearPath)) {
+            mkdir($newYearPath, 0755, true);
+        }
+        
+        $newFilePath = $newYearPath . '/' . $uuid . '.json';
+        
+        // Elimina il vecchio file
+        unlink($existingFilePath);
+        
+        // Salva nel nuovo percorso
+        file_put_contents($newFilePath, json_encode($reportData, JSON_PRETTY_PRINT));
+    } else {
+        // Aggiorna il file esistente
+        file_put_contents($existingFilePath, json_encode($reportData, JSON_PRETTY_PRINT));
+    }
+    
+    // Aggiorna l'indice di ricerca
+    // Prima rimuovi i tag vecchi
+    if (isset($existingData['tags'])) {
+        removeFromSearchIndex($config, $existingData['tags'], $uuid);
+    }
+    
+    // Poi aggiungi i nuovi tag
+    if (isset($reportData['tags'])) {
+        updateSearchIndex($config, $reportData['tags'], $uuid);
+    }
+    
+    return true;
+}
+
 // Routing delle API
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
@@ -437,6 +513,54 @@ switch ($action) {
         // Invia il file
         readfile($pdfPath);
         exit;
+        break;
+        
+    case 'get_report':
+        if (!isAuthenticated($config)) {
+            echo json_encode(['error' => 'Non autenticato']);
+            exit;
+        }
+        
+        $uuid = $_GET['uuid'] ?? $_POST['uuid'] ?? '';
+        
+        if (empty($uuid)) {
+            echo json_encode(['error' => 'UUID mancante']);
+            exit;
+        }
+        
+        $report = getReport($config, $uuid);
+        
+        if ($report) {
+            echo json_encode(['success' => true, 'data' => $report]);
+        } else {
+            echo json_encode(['error' => 'Referto non trovato']);
+        }
+        break;
+        
+    case 'update_report':
+        if (!isAuthenticated($config)) {
+            echo json_encode(['error' => 'Non autenticato']);
+            exit;
+        }
+        
+        $uuid = $_POST['uuid'] ?? '';
+        $reportData = json_decode($_POST['report_data'], true);
+        
+        if (empty($uuid)) {
+            echo json_encode(['error' => 'UUID mancante']);
+            exit;
+        }
+        
+        if (!$reportData) {
+            echo json_encode(['error' => 'Dati del referto mancanti']);
+            exit;
+        }
+        
+        if (updateReport($config, $reportData, $uuid)) {
+            echo json_encode(['success' => true, 'message' => 'Referto aggiornato con successo']);
+        } else {
+            echo json_encode(['error' => 'Errore nell\'aggiornamento del referto']);
+        }
         break;
         
     default:
