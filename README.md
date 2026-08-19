@@ -2,7 +2,7 @@
 
 <img src="/icon.png" alt="Food Tracker Icon" width="100">
 
-Applicazione per la gestione e tracciatura dei referti medici con funzionalità OCR creata in Vibe Coding.
+A simple application for the management and tracking of medical reports with OCR functionality created in Vibe Coding.
 
 ## Installation
 
